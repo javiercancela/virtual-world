@@ -1,156 +1,183 @@
-# Virtual World - Implementation Specification
+# Night Desk
 
-## Project Overview
+`Night Desk` is a small text-only detective CLI prototype. The world state is deterministic Python data, while local `llama.cpp` models handle command routing, NPC dialogue, and narration.
 
-A Python-based game engine that allows users to interact with LLM-powered characters in configurable worlds. Characters have distinct personalities, memories, and can interact autonomously with each other and the environment.
+## What It Builds
 
-## Key Requirements
+- One fixed location: a locked security office.
+- One main NPC: Mara Voss.
+- One short puzzle chain: inspect the right clue, earn Mara's trust, open the cabinet, take the key, unlock the exit.
+- One JSONL log entry per turn with raw model outputs and state transitions.
 
-- **Python 3.12** based implementation
-- **Text-only interface** (initially)
-- **Configurable LLM providers** (OpenAI, Anthropic, Gemini, Ollama for local models)
-- **Persistent state** using SQLite
-- **Autonomous character interactions**
-- **Tool-based actions** for characters
-- **Perception-based knowledge** (characters only know what they can see/hear or are told)
-- **YAML/JSON configuration** for worlds and characters
+## Repository Layout
 
-## Project Structure
-
-```
-llm-game-engine/
-├── core/
+```text
+.
+├── README.md
+├── docs/
+│   └── design.md
+├── game/
 │   ├── __init__.py
-│   ├── engine.py           # Main game loop & orchestration
-│   ├── world.py            # World state management
-│   ├── location.py         # Location/room management
-│   ├── character.py        # Character base class
-│   ├── player.py           # Player interface
-│   └── events.py           # Event system
-├── llm/
-│   ├── __init__.py
-│   ├── base.py             # Abstract LLM interface
-│   ├── providers/
-│   │   ├── __init__.py
-│   │   ├── openai.py       # OpenAI adapter
-│   │   ├── anthropic.py    # Anthropic adapter
-│   │   └── ollama.py       # Local models via Ollama
-│   └── factory.py          # Provider factory
-├── memory/
-│   ├── __init__.py
-│   ├── character_memory.py # Individual character memories
-│   ├── event_log.py        # Global event tracking
-│   └── perception.py       # What characters can perceive
-├── actions/
-│   ├── __init__.py
-│   ├── base.py             # Action interface
-│   ├── movement.py         # Character movement
-│   ├── interaction.py      # Object/character interactions
-│   ├── inventory.py        # Item management
-│   └── validators.py       # Rule enforcement
-├── tools/
-│   ├── __init__.py
-│   ├── base.py             # Tool interface for LLMs
-│   ├── perception_tools.py # Look, examine, listen
-│   ├── action_tools.py     # Move, take, use, talk
-│   └── query_tools.py      # Check inventory, recall memory
-├── persistence/
-│   ├── __init__.py
-│   ├── sqlite_store.py     # SQLite backend
-│   └── migrations.py       # Schema versioning
-├── config/
-│   ├── __init__.py
-│   ├── loader.py           # Configuration loading
-│   ├── schemas/
-│   │   ├── world_schema.json
-│   │   └── character_schema.json
-│   └── examples/
-│       └── simple_world.yaml
-├── utils/
-│   ├── __init__.py
-│   ├── prompts.py          # Prompt engineering
-│   └── scheduler.py        # Character action scheduling
-├── tests/
-│   └── ...
-├── requirements.txt
-├── setup.py
-└── README.md
+│   ├── actions.py
+│   ├── llama_client.py
+│   ├── logging.py
+│   ├── narration.py
+│   ├── npc.py
+│   ├── parser.py
+│   ├── router.py
+│   ├── schemas.py
+│   ├── state.py
+│   └── world.py
+├── logs/
+├── main.py
+└── tests/
+    ├── test_game_engine.py
+    └── test_transcripts.py
 ```
 
-## Implementation Order
+## Python Setup
 
-1. **Phase 1: Core Infrastructure**
-   - Set up project structure
-   - Implement base classes (World, Location, Character, Item)
-   - Create event system
-   - Basic persistence with SQLite
+No third-party Python packages are required.
 
-2. **Phase 2: LLM Integration**
-   - Implement LLM provider interface
-   - Create OpenAI adapter
-   - Add tool system for character actions
-   - Basic prompt engineering
-
-3. **Phase 3: Game Mechanics**
-   - Movement system
-   - Inventory management
-   - Character interactions
-   - Perception system
-
-4. **Phase 4: Memory & Intelligence**
-   - Character memory implementation
-   - Event perception logic
-   - Autonomous character behavior
-   - Goal-driven actions
-
-5. **Phase 5: Player Interface**
-   - Command parsing
-   - Natural language understanding
-   - Game state display
-   - Save/load functionality
-
-6. **Phase 6: Advanced Features**
-   - Additional LLM providers (Anthropic, Ollama)
-   - Complex world rules
-   - Character relationships
-   - Narrative generation
-
-## Testing Strategy
-
-- Unit tests for core components
-- Integration tests for LLM interactions
-- Mock LLM provider for testing
-- Example scenarios for validation
-
-## Example Usage
-
-```python
-# main.py
-import asyncio
-from core.engine import GameEngine
-
-async def main():
-    engine = GameEngine("config/examples/simple_world.yaml")
-    await engine.run()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+```bash
+python3 --version
+python3 main.py
 ```
 
-## Notes for Implementation
+## Model Setup
 
-1. Use `asyncio` throughout for better performance with LLM calls
-2. Implement proper error handling for LLM failures
-3. Add retry logic for API calls
-4. Use environment variables for API keys
-5. Consider rate limiting for API calls
-6. Implement proper logging throughout
-7. Make the system extensible for future additions (combat, magic, etc.)
+The default runtime expects local `llama-server` instances with OpenAI-compatible chat endpoints.
 
-## Next Steps
+### Required model roles
 
-1. Create the project structure
-2. Implement core classes with basic functionality
-3. Add LLM integration starting with OpenAI
-4. Build a simple test world
-5. Iterate based on testing
+- Router: `Qwen3-4B` GGUF on a small server.
+- NPC dialogue: `QwQ-32B` Q4 GGUF.
+- Narrator/composer: `QwQ-32B` Q4 GGUF.
+
+### Example `llama-server` launch commands
+
+Run the router model on port `8081`:
+
+```bash
+./llama-server \
+  -m /models/Qwen3-4B-Instruct-Q4_K_M.gguf \
+  --alias Qwen3-4B \
+  --port 8081
+```
+
+Run the larger dialogue/narration model on port `8082`:
+
+```bash
+./llama-server \
+  -m /models/QwQ-32B-Q4_K_M.gguf \
+  --alias QwQ-32B \
+  --port 8082
+```
+
+You can point both NPC and narrator roles at the same `QwQ-32B` server.
+
+### Environment variables
+
+```bash
+export VW_ROUTER_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions
+export VW_ROUTER_MODEL=Qwen3-4B
+export VW_NPC_ENDPOINT=http://127.0.0.1:8082/v1/chat/completions
+export VW_NPC_MODEL=QwQ-32B
+export VW_NARRATOR_ENDPOINT=http://127.0.0.1:8082/v1/chat/completions
+export VW_NARRATOR_MODEL=QwQ-32B
+```
+
+Optional development flags:
+
+```bash
+export VW_FORCE_RULE_ROUTER=1
+export VW_FORCE_FALLBACK_TEXT=1
+```
+
+`VW_FORCE_RULE_ROUTER=1` enables the deterministic fallback router for offline development. The default path still targets the local models.
+
+## Structured Router Output
+
+The router schema lives in [game/schemas.py](/Users/javier.cancela/Code/personal/virtual-world/game/schemas.py). The router client in [game/router.py](/Users/javier.cancela/Code/personal/virtual-world/game/router.py) sends one of two constrained generation requests to `llama-server`:
+
+1. Preferred: `response_format` with `type: json_schema`.
+2. Fallback: top-level `grammar` with the bundled GBNF grammar.
+
+If both attempts fail or parse into an invalid object, the engine classifies the turn as `unknown`, asks the player to rephrase, and logs the failure.
+
+Example router request payload shape:
+
+```json
+{
+  "model": "Qwen3-4B",
+  "messages": [
+    {"role": "system", "content": "You normalize text commands into compact JSON actions."},
+    {"role": "user", "content": "Supported intents: talk, inspect, use, take, move, inventory, ask_state, help, unknown. Canonical names: exit door, steel cabinet, desk, visitor ledger, framed photo, coat rack, mara. Return one JSON object matching the schema. Player input: inspect ledger"}
+  ],
+  "temperature": 0.0,
+  "max_tokens": 128,
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "router_action",
+      "schema": {
+        "type": "object"
+      }
+    }
+  }
+}
+```
+
+Example router result:
+
+```json
+{
+  "intent": "inspect",
+  "target": "visitor ledger",
+  "secondary_target": null,
+  "utterance": null,
+  "confidence": 0.93
+}
+```
+
+## Running the Game
+
+```bash
+python3 main.py
+```
+
+Useful commands in-game:
+
+- `look`
+- `inspect ledger`
+- `talk to Mara about Silas Vale`
+- `use steel cabinet`
+- `take brass key`
+- `use brass key on exit door`
+- `inventory`
+- `help`
+- `quit`
+
+## Running Tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+## Logs
+
+Logs are written to `logs/session-<timestamp>.jsonl`.
+
+Each line includes:
+
+- `turn_index`
+- `player_input`
+- `router_raw_output`
+- `router_parsed_output`
+- `validated_action`
+- `state_before`
+- `state_transition`
+- `state_after`
+- optional NPC/narrator prompt excerpts and raw outputs
+- `rendered_response`
+- `error`
