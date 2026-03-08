@@ -1,0 +1,7 @@
+[project]
+name = "night-desk"
+version = "0.1.0"
+description = "Text-only detective CLI prototype with local llama.cpp models"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []

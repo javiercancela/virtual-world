@@ -14,6 +14,8 @@
 ```text
 .
 ├── README.md
+├── pyproject.toml
+├── uv.lock
 ├── docs/
 │   └── design.md
 ├── game/
@@ -37,12 +39,19 @@
 
 ## Python Setup
 
-No third-party Python packages are required.
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). No third-party packages are required; the lockfile pins the environment.
+
+**Prerequisites:** [Install uv](https://docs.astral.sh/uv/getting-started/installation/) (e.g. `curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 ```bash
-python3 --version
-python3 main.py
+# Create virtual environment and sync (install dependencies from lockfile)
+uv sync
+
+# Run the game
+uv run python main.py
 ```
+
+To add dependencies later: `uv add <package>` (or `uv add --dev <package>` for dev tools). Commit `uv.lock` for reproducible installs.
 
 ## Model Setup
 
@@ -143,7 +152,7 @@ Example router result:
 ## Running the Game
 
 ```bash
-python3 main.py
+uv run python main.py
 ```
 
 Useful commands in-game:
@@ -161,7 +170,7 @@ Useful commands in-game:
 ## Running Tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+uv run python -m unittest discover -s tests -v
 ```
 
 ## Logs
