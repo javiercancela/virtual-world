@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from .actions import ActionEngine
+from .llama_server_notice import (
+    append_llama_server_not_running_text,
+    build_llama_server_not_running_text,
+    is_llama_server_unreachable,
+)
 from .logging import TurnLogger, default_log_path
 from .narration import NarrationReply, NarratorModel
 from .npc import NPCModel, NPCReply
@@ -40,13 +45,30 @@ class TurnProcessor:
 
     def opening_text(self) -> str:
         reply = self.narrator.opening_scene(self.state, OPENING_FACTS)
-        return reply.text
+        return append_llama_server_not_running_text(
+            reply.text,
+            [self.narrator.endpoint],
+            reply.error,
+        )
 
     def process_turn(self, player_input: str) -> TurnResult:
         state_before = self.state.to_dict()
         turn_index = self.state.turn_count + 1
         router_turn = self.router.route(player_input, self.state)
         validated_action = validate_router_decision(router_turn.decision)
+
+        if is_llama_server_unreachable(router_turn.error):
+            return self._finish_turn(
+                turn_index=turn_index,
+                player_input=player_input,
+                state_before=state_before,
+                router_turn=router_turn,
+                validated_action=validated_action,
+                state_transition={"events": ["router_transport_failure"]},
+                rendered_response=build_llama_server_not_running_text(self._configured_model_endpoints()),
+                error=router_turn.error,
+            )
+
         outcome = self.engine.apply(self.state, validated_action)
 
         narrator_reply: NarrationReply | None = None
@@ -56,13 +78,51 @@ class TurnProcessor:
 
         if outcome.response_mode == "narrator" and outcome.narrator_context is not None:
             narrator_reply = self.narrator.narrate(self.state, outcome.narrator_context)
-            rendered_response = narrator_reply.text
+            rendered_response = append_llama_server_not_running_text(
+                narrator_reply.text,
+                [self.narrator.endpoint],
+                narrator_reply.error,
+            )
             error = error or narrator_reply.error
         elif outcome.response_mode == "npc" and outcome.npc_context is not None:
             npc_reply = self.npc.generate_reply(self.state, outcome.npc_context)
-            rendered_response = npc_reply.text
+            rendered_response = append_llama_server_not_running_text(
+                npc_reply.text,
+                [self.npc.endpoint],
+                npc_reply.error,
+            )
             error = error or npc_reply.error
 
+        return self._finish_turn(
+            turn_index=turn_index,
+            player_input=player_input,
+            state_before=state_before,
+            router_turn=router_turn,
+            validated_action=validated_action,
+            state_transition=outcome.state_transition,
+            rendered_response=rendered_response,
+            error=error,
+            narrator_reply=narrator_reply,
+            npc_reply=npc_reply,
+        )
+
+    def _configured_model_endpoints(self) -> list[str]:
+        return [self.router.endpoint, self.narrator.endpoint, self.npc.endpoint]
+
+    def _finish_turn(
+        self,
+        *,
+        turn_index: int,
+        player_input: str,
+        state_before: dict[str, Any],
+        router_turn: RouterTurn,
+        validated_action: ValidatedAction,
+        state_transition: dict[str, Any],
+        rendered_response: str,
+        error: str | None,
+        narrator_reply: NarrationReply | None = None,
+        npc_reply: NPCReply | None = None,
+    ) -> TurnResult:
         self.state.turn_count += 1
         self.state.add_transcript_line("player", player_input.strip())
         speaker = "mara" if npc_reply is not None else "narrator"
@@ -78,7 +138,7 @@ class TurnProcessor:
                 "router_parsed_output": router_turn.decision.to_dict(),
                 "validated_action": validated_action.to_dict(),
                 "state_before": state_before,
-                "state_transition": outcome.state_transition,
+                "state_transition": state_transition,
                 "state_after": state_after,
                 "npc_prompt_excerpt": npc_reply.prompt_excerpt if npc_reply else None,
                 "npc_raw_output": npc_reply.raw_output if npc_reply else None,

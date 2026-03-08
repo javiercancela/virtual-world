@@ -105,6 +105,8 @@ export VW_FORCE_FALLBACK_TEXT=1
 
 `VW_FORCE_RULE_ROUTER=1` enables the deterministic fallback router for offline development. The default path still targets the local models.
 
+If a configured model endpoint is unreachable, the CLI now prints an explicit `llama-server` notice with the configured URL or URLs instead of falling through to the generic "rephrase" response.
+
 ## Structured Router Output
 
 The router schema lives in [game/schemas.py](/Users/javier.cancela/Code/personal/virtual-world/game/schemas.py). The router client in [game/router.py](/Users/javier.cancela/Code/personal/virtual-world/game/router.py) sends one of two constrained generation requests to `llama-server`:
@@ -112,7 +114,7 @@ The router schema lives in [game/schemas.py](/Users/javier.cancela/Code/personal
 1. Preferred: `response_format` with `type: json_schema`.
 2. Fallback: top-level `grammar` with the bundled GBNF grammar.
 
-If both attempts fail or parse into an invalid object, the engine classifies the turn as `unknown`, asks the player to rephrase, and logs the failure.
+If both attempts fail because the router endpoint is unreachable, the CLI tells the player that `llama-server` is not running at the configured URL or URLs and logs the transport failure. Other invalid router outputs still fall back to `unknown`, ask the player to rephrase, and log the failure.
 
 Example router request payload shape:
 

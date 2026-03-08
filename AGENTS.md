@@ -9,7 +9,7 @@ Night Desk: text-only detective CLI. Deterministic Python world state; local lla
 ## Layout
 
 - **Root:** `main.py` entrypoint, `pyproject.toml` and `uv.lock` for dependency management (uv).
-- **game/** Application logic: actions, router, NPC, narrator, state, world, schemas, logging, parser, llama client.
+- **game/** Application logic: actions, router, NPC, narrator, llama availability notices, state, world, schemas, logging, parser, llama client.
 - **tests/** Unittest-based tests.
 - **docs/** Design and other documentation.
 - **logs/** JSONL session logs (one file per run).
