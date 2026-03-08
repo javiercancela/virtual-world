@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .llama_client import LlamaServerClient, LlamaTransportError, extract_chat_text
-from .schemas import ROUTER_ACTION_GBNF, ROUTER_ACTION_SCHEMA, RouterDecision, RouterValidationError, parse_router_payload
+from .llama_client import LlamaServerClient, LlamaTransportError, extract_completion_text
+from .schemas import RouterDecision, RouterValidationError, parse_router_payload
 from .state import GameState
 from .world import OBJECTS, SUPPORTED_INTENTS, canonicalize_name, visible_objects
 
@@ -85,7 +85,8 @@ class RouterModel:
         timeout_seconds: float = 12.0,
         allow_rule_fallback: bool = False,
     ) -> None:
-        self.endpoint = endpoint or os.getenv("VW_ROUTER_ENDPOINT", "http://127.0.0.1:8081/v1/chat/completions")
+        configured_endpoint = endpoint or os.getenv("VW_ROUTER_ENDPOINT", "http://127.0.0.1:8081/v1/completions")
+        self.endpoint = self._normalize_completion_endpoint(configured_endpoint)
         self.model_name = model_name or os.getenv("VW_ROUTER_MODEL", "Qwen3-4B")
         self.client = LlamaServerClient(self.endpoint, timeout_seconds=timeout_seconds)
         self.rule_router = RuleBasedRouter()
@@ -98,43 +99,25 @@ class RouterModel:
         prompt = self._build_prompt(player_input, state)
         prompt_excerpt = prompt[:480]
 
-        errors: list[str] = []
-        for constraint_name, response_format, grammar in [
-            (
-                "schema",
-                {
-                    "type": "json_schema",
-                    "json_schema": {"name": "router_action", "schema": ROUTER_ACTION_SCHEMA},
-                },
-                None,
-            ),
-            ("grammar", None, ROUTER_ACTION_GBNF),
-        ]:
-            try:
-                response_payload = self.client.chat_completion(
-                    model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": "You normalize text commands into compact JSON actions."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    temperature=0.0,
-                    max_tokens=128,
-                    response_format=response_format,
-                    grammar=grammar,
-                )
-                raw_output = extract_chat_text(response_payload)
-                decision = parse_router_payload(raw_output)
-                return RouterTurn(
-                    decision=decision,
-                    raw_output=raw_output,
-                    prompt_excerpt=prompt_excerpt,
-                    used_constraint=constraint_name,
-                )
-            except (LlamaTransportError, RouterValidationError) as exc:
-                errors.append(f"{constraint_name}: {exc}")
+        try:
+            response_payload = self.client.text_completion(
+                model=self.model_name,
+                prompt=prompt,
+                temperature=0.0,
+                max_tokens=128,
+            )
+            raw_output = extract_completion_text(response_payload)
+            decision = parse_router_payload(raw_output)
+            return RouterTurn(
+                decision=decision,
+                raw_output=raw_output,
+                prompt_excerpt=prompt_excerpt,
+                used_constraint="prompted_json",
+            )
+        except (LlamaTransportError, RouterValidationError) as exc:
+            raw_output = ""
+            error_message = f"prompted_json: {exc}"
 
-        raw_output = ""
-        error_message = "; ".join(errors) if errors else "router failure"
         if self.allow_rule_fallback:
             fallback_turn = self.rule_router.route(player_input, state)
             fallback_turn.error = error_message
@@ -151,14 +134,22 @@ class RouterModel:
         visible = ", ".join(visible_objects(state) + ["mara"])
         intent_list = ", ".join(SUPPORTED_INTENTS)
         return (
+            "/no_think\n"
+            "Return only one compact JSON object with exactly these keys in this order: "
+            '"intent", "target", "secondary_target", "utterance", "confidence". '
             "Supported intents: "
             f"{intent_list}. "
             "Canonical names: "
             f"{visible}. "
-            "Return one JSON object matching the schema. Normalize references to canonical names when possible. "
-            "Use utterance only for talk. If unsure, choose unknown. "
+            "Normalize references to canonical names when possible. "
+            "Use utterance only for talk; otherwise return null. "
+            "Use null for missing targets. "
+            "If unsure, choose unknown with null targets and utterance. "
             f"Player input: {player_input.strip()}"
         )
+
+    def _normalize_completion_endpoint(self, endpoint: str) -> str:
+        return endpoint.replace("/v1/chat/completions", "/v1/completions")
 
 
 @dataclass(slots=True)

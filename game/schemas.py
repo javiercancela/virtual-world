@@ -28,16 +28,16 @@ object ::= "{" ws
     "\"secondary_target\"" ws ":" ws nullable_string ws "," ws
     "\"utterance\"" ws ":" ws nullable_string ws "," ws
     "\"confidence\"" ws ":" ws number ws
-"}" 
+"}"
 intent ::= "\"talk\"" | "\"inspect\"" | "\"use\"" | "\"take\"" | "\"move\"" | "\"inventory\"" | "\"ask_state\"" | "\"help\"" | "\"unknown\""
 nullable_string ::= string | "null"
 string ::= "\"" chars "\""
 chars ::= "" | char chars
-char ::= [^"\\\x00-\x1F] | "\\" escape
+char ::= [^"\\] | "\\" escape
 escape ::= ["\\/bfnrt] | "u" hex hex hex hex
 hex ::= [0-9a-fA-F]
-number ::= int frac? exp?
-int ::= "-"? digit1to9 digits? | "0"
+number ::= integer-part frac? exp?
+integer-part ::= "-"? digit1to9 digits? | "0"
 digits ::= digit digits | ""
 digit ::= [0-9]
 digit1to9 ::= [1-9]
@@ -76,8 +76,9 @@ class TextReply:
 
 
 def parse_router_payload(raw_text: str) -> RouterDecision:
+    json_text = _extract_first_json_object(raw_text)
     try:
-        payload = json.loads(raw_text)
+        payload = json.loads(json_text)
     except json.JSONDecodeError as exc:
         raise RouterValidationError(f"Router output was not valid JSON: {exc}") from exc
     return validate_router_payload(payload)
@@ -124,3 +125,36 @@ def validate_router_payload(payload: Any) -> RouterDecision:
         utterance=utterance.strip() if isinstance(utterance, str) else None,
         confidence=float(confidence),
     )
+
+
+def _extract_first_json_object(raw_text: str) -> str:
+    start = raw_text.find("{")
+    if start == -1:
+        return raw_text
+
+    depth = 0
+    in_string = False
+    escape_next = False
+    for index in range(start, len(raw_text)):
+        character = raw_text[index]
+        if in_string:
+            if escape_next:
+                escape_next = False
+            elif character == "\\":
+                escape_next = True
+            elif character == '"':
+                in_string = False
+            continue
+
+        if character == '"':
+            in_string = True
+            continue
+        if character == "{":
+            depth += 1
+            continue
+        if character == "}":
+            depth -= 1
+            if depth == 0:
+                return raw_text[start:index + 1]
+
+    return raw_text

@@ -8,8 +8,8 @@ from pathlib import Path
 from game.actions import ActionEngine
 from game.logging import TurnLogger
 from game.parser import TurnProcessor
-from game.router import RuleBasedRouter, validate_router_decision
-from game.schemas import RouterValidationError, parse_router_payload
+from game.router import RouterModel, RuleBasedRouter, validate_router_decision
+from game.schemas import ROUTER_ACTION_GBNF, RouterValidationError, parse_router_payload
 from game.narration import NarratorModel
 from game.npc import NPCModel
 from game.world import CABINET_CODE, build_initial_state
@@ -34,6 +34,19 @@ class EngineTests(unittest.TestCase):
             parse_router_payload(
                 '{"intent":"inspect","target":"visitor ledger","secondary_target":null,"utterance":null,"confidence":0.91,"extra":true}'
             )
+
+        decision_with_prefix = parse_router_payload(
+            '.\n\n{"intent":"inspect","target":"visitor ledger","secondary_target":null,"utterance":null,"confidence":0.91}'
+        )
+        self.assertEqual(decision_with_prefix.intent, "inspect")
+        self.assertEqual(decision_with_prefix.target, "visitor ledger")
+
+    def test_router_grammar_avoids_unsupported_hex_ranges(self) -> None:
+        self.assertNotIn("\\x", ROUTER_ACTION_GBNF)
+
+    def test_router_normalizes_chat_completion_endpoint(self) -> None:
+        router = RouterModel(endpoint="http://127.0.0.1:8081/v1/chat/completions")
+        self.assertEqual(router.endpoint, "http://127.0.0.1:8081/v1/completions")
 
     def test_invalid_action_does_not_corrupt_state(self) -> None:
         state = build_initial_state()

@@ -36,6 +36,28 @@ class LlamaServerClient:
             payload["response_format"] = response_format
         if grammar is not None:
             payload["grammar"] = grammar
+        return self._post_json(payload)
+
+    def text_completion(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        grammar: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if grammar is not None:
+            payload["grammar"] = grammar
+        return self._post_json(payload)
+
+    def _post_json(self, payload: dict[str, Any]) -> dict[str, Any]:
 
         request = urllib.request.Request(
             self.endpoint,
@@ -76,3 +98,15 @@ def extract_chat_text(response_payload: dict[str, Any]) -> str:
         if joined:
             return joined
     raise LlamaTransportError("llama-server response did not include text content.")
+
+
+def extract_completion_text(response_payload: dict[str, Any]) -> str:
+    try:
+        choice = response_payload["choices"][0]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise LlamaTransportError("llama-server response did not include choices[0].") from exc
+
+    text = choice.get("text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    return extract_chat_text(response_payload)

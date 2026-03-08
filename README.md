@@ -88,7 +88,7 @@ You can point both NPC and narrator roles at the same `QwQ-32B` server.
 ### Environment variables
 
 ```bash
-export VW_ROUTER_ENDPOINT=http://127.0.0.1:8081/v1/chat/completions
+export VW_ROUTER_ENDPOINT=http://127.0.0.1:8081/v1/completions
 export VW_ROUTER_MODEL=Qwen3-4B
 export VW_NPC_ENDPOINT=http://127.0.0.1:8082/v1/chat/completions
 export VW_NPC_MODEL=QwQ-32B
@@ -109,33 +109,18 @@ If a configured model endpoint is unreachable, the CLI now prints an explicit `l
 
 ## Structured Router Output
 
-The router schema lives in [game/schemas.py](/Users/javier.cancela/Code/personal/virtual-world/game/schemas.py). The router client in [game/router.py](/Users/javier.cancela/Code/personal/virtual-world/game/router.py) sends one of two constrained generation requests to `llama-server`:
+The router schema lives in `game/schemas.py`. The router client in `game/router.py` sends a `/no_think` text completion request to the router model at `/v1/completions`, then validates the first JSON object in the response against the local schema.
 
-1. Preferred: `response_format` with `type: json_schema`.
-2. Fallback: top-level `grammar` with the bundled GBNF grammar.
-
-If both attempts fail because the router endpoint is unreachable, the CLI tells the player that `llama-server` is not running at the configured URL or URLs and logs the transport failure. Other invalid router outputs still fall back to `unknown`, ask the player to rephrase, and log the failure.
+If the router endpoint is unreachable, the CLI tells the player that `llama-server` is not running at the configured URL or URLs and logs the transport failure. Other invalid router outputs still fall back to `unknown`, ask the player to rephrase, and log the failure.
 
 Example router request payload shape:
 
 ```json
 {
   "model": "Qwen3-4B",
-  "messages": [
-    {"role": "system", "content": "You normalize text commands into compact JSON actions."},
-    {"role": "user", "content": "Supported intents: talk, inspect, use, take, move, inventory, ask_state, help, unknown. Canonical names: exit door, steel cabinet, desk, visitor ledger, framed photo, coat rack, mara. Return one JSON object matching the schema. Player input: inspect ledger"}
-  ],
+  "prompt": "/no_think\nReturn only one compact JSON object with exactly these keys in this order: \"intent\", \"target\", \"secondary_target\", \"utterance\", \"confidence\". Supported intents: talk, inspect, use, take, move, inventory, ask_state, help, unknown. Canonical names: exit door, steel cabinet, desk, visitor ledger, framed photo, coat rack, mara. Normalize references to canonical names when possible. Use utterance only for talk; otherwise return null. Use null for missing targets. If unsure, choose unknown with null targets and utterance. Player input: inspect ledger",
   "temperature": 0.0,
-  "max_tokens": 128,
-  "response_format": {
-    "type": "json_schema",
-    "json_schema": {
-      "name": "router_action",
-      "schema": {
-        "type": "object"
-      }
-    }
-  }
+  "max_tokens": 128
 }
 ```
 
